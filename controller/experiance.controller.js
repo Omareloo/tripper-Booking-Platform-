@@ -2,11 +2,6 @@ import ExperienceModel from "../models/experiance_model.js";
 import { asyncHandler } from "../middlewares/errorHandler.js";
 import mongoose from "mongoose";
 
-// Get all experiences
-const getAllExperiences = asyncHandler(async (req, res) => {
-    const experiences = await ExperienceModel.find();
-    res.status(200).json(experiences);
-});
 
 // Get experience by ID
 const getExperienceById = asyncHandler(async (req, res) => {
@@ -25,52 +20,6 @@ const getExperienceById = asyncHandler(async (req, res) => {
     res.status(200).json(experience);
 });
 
-// Create new experience
-const createExperience = asyncHandler(async (req, res) => {
-    let {
-        name,
-        description,
-        price,
-        dates,
-        activities,
-        address,
-    } = req.body;
-
-    // Validate required fields
-    if (!name || !price || !address?.country || !address?.city) {
-        return res.status(400).json({
-            message: "Name, price, country, and city are required"
-        });
-    }
-    dates = dates ? JSON.parse(dates) : [];
-
-    // Validate activities structure if provided
-    if (activities && Array.isArray(activities)) {
-        for (let activity of activities) {
-            if (!activity.title) {
-                return res.status(400).json({
-                    message: "Each activity must have a title"
-                });
-            }
-        }
-    }
-    const images = req.files.map(file => file.path);
-
-    const newExperience = new ExperienceModel({
-        hostId: req.user._id,
-        name,
-        description,
-        images: images || [],
-        price,
-        dates: dates || [],
-        activities: activities || [],
-        address,
-    });
-
-    const savedExperience = await newExperience.save();
-    await savedExperience.populate('hostId', 'name email');
-    res.status(201).json(savedExperience);
-});
 
 // Update experience
 const updateExperience = asyncHandler(async (req, res) => {
@@ -144,50 +93,6 @@ const getExperiencesByHost = asyncHandler(async (req, res) => {
     res.status(200).json(experiences);
 });
 
-// Search experiences with filters
-const searchExperiences = asyncHandler(async (req, res) => {
-    const {
-        city,
-        country,
-        minPrice,
-        maxPrice,
-        minRating,
-        date,
-        activity
-    } = req.query;
-
-    let filter = {};
-
-    // Location filters
-    if (city) filter['address.city'] = new RegExp(city, 'i');
-    if (country) filter['address.country'] = new RegExp(country, 'i');
-
-    // Price range filter
-    if (minPrice || maxPrice) {
-        filter.price = {};
-        if (minPrice) filter.price.$gte = Number(minPrice);
-        if (maxPrice) filter.price.$lte = Number(maxPrice);
-    }
-
-    // Rating filter
-    if (minRating) {
-        filter.starRating = { $gte: Number(minRating) };
-    }
-
-    // Date filter - find experiences that have the specified date
-    if (date) {
-        const targetDate = new Date(date);
-        filter.dates = { $elemMatch: { $eq: targetDate } };
-    }
-
-    // Activity filter - find experiences that have activities containing the search term
-    if (activity) {
-        filter['activities.title'] = new RegExp(activity, 'i');
-    }
-
-    const experiences = await ExperienceModel.find(filter).populate('hostId', 'name email');
-    res.status(200).json(experiences);
-});
 
 // Add activity to experience
 const addActivity = asyncHandler(async (req, res) => {
@@ -346,6 +251,149 @@ const getExperiencesByHostById = asyncHandler(async (req, res) => {
     res.status(200).json(experiences);
 });
 
+
+
+// ✅ IMPROVED: Get all experiences with sorting
+ const getAllExperiences = asyncHandler(async (req, res) => {
+  try {
+    const experiences = await ExperienceModel.find()
+      .populate('hostId', 'name email image')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json(experiences);
+  } catch (error) {
+    console.error("Error fetching experiences:", error);
+    res.status(500).json({ message: "Failed to fetch experiences" });
+  }
+});
+
+// ✅ IMPROVED: Create experience with better validation
+ const createExperience = asyncHandler(async (req, res) => {
+  let {
+    name,
+    description,
+    price,
+    dates,
+    activities,
+    address,
+  } = req.body;
+
+  // ✅ Enhanced validation
+  if (!name || !name.trim()) {
+    return res.status(400).json({ message: "Experience name is required" });
+  }
+
+  if (!price || price < 0) {
+    return res.status(400).json({ message: "Valid price is required" });
+  }
+
+  if (!address?.country || !address?.city) {
+    return res.status(400).json({
+      message: "Country and city are required"
+    });
+  }
+
+  // Parse dates if provided
+  dates = dates ? JSON.parse(dates) : [];
+
+  // Validate dates
+  if (dates && dates.length > 0) {
+    const invalidDates = dates.filter(d => isNaN(new Date(d).getTime()));
+    if (invalidDates.length > 0) {
+      return res.status(400).json({ message: "Invalid date format" });
+    }
+  }
+
+  // Validate activities
+  if (activities && Array.isArray(activities)) {
+    for (let activity of activities) {
+      if (!activity.title || !activity.title.trim()) {
+        return res.status(400).json({
+          message: "Each activity must have a title"
+        });
+      }
+    }
+  }
+
+  // Handle image uploads
+  const images = req.files?.map(file => file.path) || [];
+
+  const newExperience = new ExperienceModel({
+    hostId: req.user._id,
+    name: name.trim(),
+    description: description?.trim(),
+    images,
+    price: Number(price),
+    dates: dates.map(d => new Date(d)),
+    activities: activities || [],
+    address,
+  });
+
+  const savedExperience = await newExperience.save();
+  await savedExperience.populate('hostId', 'name email image');
+
+  res.status(201).json({
+    message: "Experience created successfully",
+    data: savedExperience
+  });
+});
+
+// ✅ IMPROVED: Search experiences with sorting
+ const searchExperiences = asyncHandler(async (req, res) => {
+  const {
+    city,
+    country,
+    minPrice,
+    maxPrice,
+    minRating,
+    date,
+    activity,
+    sortBy = 'createdAt',
+    order = 'desc'
+  } = req.query;
+
+  let filter = {};
+
+  // Location filters
+  if (city) filter['address.city'] = new RegExp(city, 'i');
+  if (country) filter['address.country'] = new RegExp(country, 'i');
+
+  // Price range
+  if (minPrice || maxPrice) {
+    filter.price = {};
+    if (minPrice) filter.price.$gte = Number(minPrice);
+    if (maxPrice) filter.price.$lte = Number(maxPrice);
+  }
+
+  // Rating filter
+  if (minRating) {
+    filter.starRating = { $gte: Number(minRating) };
+  }
+
+  // Date filter
+  if (date) {
+    const targetDate = new Date(date);
+    if (!isNaN(targetDate.getTime())) {
+      filter.dates = { $elemMatch: { $eq: targetDate } };
+    }
+  }
+
+  // Activity filter
+  if (activity) {
+    filter['activities.title'] = new RegExp(activity, 'i');
+  }
+
+  // ✅ Sorting
+  const sortOrder = order === 'asc' ? 1 : -1;
+  const sortOptions = {};
+  sortOptions[sortBy] = sortOrder;
+
+  const experiences = await ExperienceModel.find(filter)
+    .populate('hostId', 'name email image')
+    .sort(sortOptions);
+
+  res.status(200).json(experiences);
+});
 
 
 export {

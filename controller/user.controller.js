@@ -5,44 +5,81 @@ import jwt from "jsonwebtoken";
 import { template,hostApprovalTemplate,hostRejectionTemplate } from "../email/emailTemplate.js";
 import sendEmail from "../email/email.js";
 
-
-// signup
 export const signup = asyncHandler(async (req, res) => {
-  req.body.password = await bcrypt.hash(req.body.password, 8);
+  // Check if user already exists
+  const existingUser = await User.findOne({ email: req.body.email });
+  if (existingUser) {
+    return res.status(409).json({ 
+      message: "This email is already registered" 
+    });
+  }
 
+  // Hash password
+  req.body.password = await bcrypt.hash(req.body.password, 10);
+
+  // Create user
   let user = await User.create(req.body);
   user.password = undefined;
 
+  // Generate verification token
   const token = jwt.sign({ email: req.body.email }, "myEmail", {
-    expiresIn: "1h",
+    expiresIn: "24h", // ✅ زودت المدة من ساعة لـ 24 ساعة
   });
 
-  const verificationLink = `http://localhost:4000/user/verify/${token}`;
+  const verificationLink = `${process.env.FRONTEND_URL || 'http://localhost:4000'}/user/verify/${token}`;
   const htmlTemplate = template(verificationLink);
 
   try {
     await sendEmail(req.body.email, "Verify Your Email", htmlTemplate);
   } catch (error) {
     console.error("Email sending error:", error);
+    // ✅ Don't fail registration if email fails
   }
+
   res.status(201).json({
-    message: "User created successfully",
+    message: "Account created successfully. Please check your email for verification.",
     data: user,
   });
 });
 
-
-//signin
+// ✅ تحسين الـ signin function
 export const signin = asyncHandler(async (req, res) => {
+  // Find user
   let user = await User.findOne({ email: req.body.email });
-  if (!user || !(await bcrypt.compare(req.body.password, user.password)))
+  
+  if (!user) {
     return res.status(401).json({ message: "Invalid email or password" });
-  if (user.isConfirmed === false) return res.status(401).json({ message: "User not confirmed" });
-  let token = jwt.sign({ _id: user._id, activeRole: user.activeRole, email: user.email }, 'secret');
+  }
+
+  // Check password
+  const isPasswordValid = await bcrypt.compare(req.body.password, user.password);
+  if (!isPasswordValid) {
+    return res.status(401).json({ message: "Invalid email or password" });
+  }
+
+  // Check email confirmation
+  if (user.isConfirmed === false) {
+    return res.status(403).json({ 
+      message: "Please verify your email before logging in. Check your inbox." 
+    });
+  }
+
+  // Generate token
+  let token = jwt.sign(
+    { 
+      _id: user._id, 
+      activeRole: user.activeRole, 
+      email: user.email 
+    }, 
+    process.env.JWT_SECRET || 'secret',
+    { expiresIn: '7d' } // ✅ أضفت expiration time
+  );
+
   return res.json({
     message: "Login successful",
     user: {
       _id: user._id,
+      name: user.name,
       email: user.email,
       role: user.role,
       activeRole: user.activeRole,
