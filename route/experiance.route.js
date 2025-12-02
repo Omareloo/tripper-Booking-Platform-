@@ -44,7 +44,7 @@ router.post("/:id/dates", auth, host, addDate);
 router.delete("/:id/dates", auth, host, removeDate);
 
 
-router.get("/by-host/:hostId", auth,admin, getExperiencesByHostById);
+router.get("/by-host/:hostId", auth, getExperiencesByHostById);
 
 
 

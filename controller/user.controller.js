@@ -4,6 +4,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { template,hostApprovalTemplate,hostRejectionTemplate } from "../email/emailTemplate.js";
 import sendEmail from "../email/email.js";
+import mongoose from "mongoose";
 
 export const signup = asyncHandler(async (req, res) => {
   // Check if user already exists
@@ -39,6 +40,34 @@ export const signup = asyncHandler(async (req, res) => {
   res.status(201).json({
     message: "Account created successfully. Please check your email for verification.",
     data: user,
+  });
+});
+
+
+export const getHostProfileById = asyncHandler(async (req, res) => {
+  const { hostId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(hostId)) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "Invalid host ID format" 
+    });
+  }
+
+  const user = await User.findById(hostId).select(
+    "name email phone image role activeRole isVerified createdAt bio"
+  );
+
+  if (!user) {
+    return res.status(404).json({ 
+      success: false, 
+      message: "Host not found" 
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: user
   });
 });
 
@@ -331,6 +360,8 @@ export const updateUserProfile = asyncHandler(async (req, res) => {
     }
   });
 });
+
+
 
 
 export const updateUserProfileImage = asyncHandler(async (req, res) => {
