@@ -180,24 +180,81 @@ export const getUserReservations = asyncHandler(async (req, res) => {
   res.status(200).json(reservations);
 });
 
+// export const getHostReservations = asyncHandler(async (req, res) => {
+//   const hostId = req.user._id;
+//   const hostHotels = await HotelModel.find({ hostId }).select("_id");
+//   const hostExperiences = await ExperienceModel.find({ hostId }).select("_id");
+  
+//     const hotelIds = hostHotels.map(h => h._id);
+//   const experienceIds = hostExperiences.map(e => e._id);
+//   const reservations = await Reservation.find({
+//     $or: [
+//       { hotelId: { $in: hotelIds } },
+//       { experienceId: { $in: experienceIds } },
+//     ],
+//   })
+//     .populate("guestId", "name email")
+//     .populate("hotelId", "name price")
+//     .populate("experienceId", "name price");
+//   res.status(200).json(reservations);
+// });
+
 export const getHostReservations = asyncHandler(async (req, res) => {
   const hostId = req.user._id;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const status = req.query.status;
+  const type = req.query.type;
+  
+  const skip = (page - 1) * limit;
+
   const hostHotels = await HotelModel.find({ hostId }).select("_id");
   const hostExperiences = await ExperienceModel.find({ hostId }).select("_id");
   
-    const hotelIds = hostHotels.map(h => h._id);
+  const hotelIds = hostHotels.map(h => h._id);
   const experienceIds = hostExperiences.map(e => e._id);
-  const reservations = await Reservation.find({
+  
+  let filter = {
     $or: [
       { hotelId: { $in: hotelIds } },
-      { experienceId: { $in: experienceIds } },
-    ],
-  })
-    .populate("guestId", "name email")
-    .populate("hotelId", "name price")
-    .populate("experienceId", "name price");
-  res.status(200).json(reservations);
+      { experienceId: { $in: experienceIds } }
+    ]
+  };
+  
+  if (status && status !== 'all') filter.status = status;
+  if (type === 'hotel') {
+    filter = { hotelId: { $in: hotelIds } };
+    if (status && status !== 'all') filter.status = status;
+  }
+  if (type === 'experience') {
+    filter = { experienceId: { $in: experienceIds } };
+    if (status && status !== 'all') filter.status = status;
+  }
+
+  const [reservations, total] = await Promise.all([
+    Reservation.find(filter)
+      .populate("guestId", "name email")
+      .populate("hotelId", "name price")
+      .populate("experienceId", "name price")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    Reservation.countDocuments(filter)
+  ]);
+
+  res.status(200).json({
+    reservations,
+    pagination: {
+      currentPage: page,
+      totalPages: Math.ceil(total / limit),
+      totalItems: total,
+      itemsPerPage: limit,
+      hasNextPage: page < Math.ceil(total / limit),
+      hasPrevPage: page > 1
+    }
+  });
 });
+
 
 export const getReservationByhotelOrExperienceId = asyncHandler(async (req, res) => {
   const { id } = req.params;

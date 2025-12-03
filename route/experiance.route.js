@@ -32,7 +32,7 @@ router.get("/:id", getExperienceById);
 
 router.post("/", auth, host, upload.array("images", 5), createExperience);
 router.put("/:id", auth, host, updateExperience);
-router.delete("/:id", auth, admin || host, deleteExperience);
+router.delete("/:id", auth,  host, deleteExperience);
 
 // علشان تعديل الصورة بتاعت الاكسبريانس
 router.post("/:id/images", auth, host, upload.array("images", 5), addExperienceImages);
