@@ -466,3 +466,35 @@ export const getAvailableDates = asyncHandler(async (req, res) => {
 
   return res.status(200).json(ranges);
 });
+
+// Get reservation statistics (Admin only)
+export const getReservationStats = asyncHandler(async (req, res) => {
+  const totalReservations = await ReservationModel.countDocuments();
+  
+  const statusCounts = await ReservationModel.aggregate([
+    { $group: { _id: "$status", count: { $sum: 1 } } }
+  ]);
+
+  const totalRevenue = await ReservationModel.aggregate([
+    { $group: { _id: null, total: { $sum: "$totalPrice" } } }
+  ]);
+
+  const avgPrice = await ReservationModel.aggregate([
+    { $group: { _id: null, avgPrice: { $avg: "$totalPrice" } } }
+  ]);
+
+  const recentReservations = await ReservationModel.find()
+    .sort({ createdAt: -1 })
+    .limit(5)
+    .populate('guestId', 'name email')
+    .populate('hotelId', 'name')
+    .populate('experienceId', 'name');
+
+  res.status(200).json({
+    totalReservations,
+    statusCounts,
+    totalRevenue: totalRevenue[0]?.total?.toFixed(2) || 0,
+    averagePrice: avgPrice[0]?.avgPrice?.toFixed(2) || 0,
+    recentReservations
+  });
+});

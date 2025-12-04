@@ -222,6 +222,38 @@ const getHotelsByHostById = asyncHandler(async (req, res) => {
     res.status(200).json(hotels);
 });
 
+const getHotelStats = asyncHandler(async (req, res) => {
+  const totalHotels = await HotelModel.countDocuments();
+  
+  const topCities = await HotelModel.aggregate([
+    { $group: { _id: "$address.city", count: { $sum: 1 } } },
+    { $sort: { count: -1 } },
+    { $limit: 5 }
+  ]);
+
+  const topCountries = await HotelModel.aggregate([
+    { $group: { _id: "$address.country", count: { $sum: 1 } } },
+    { $sort: { count: -1 } },
+    { $limit: 5 }
+  ]);
+
+  const avgPrice = await HotelModel.aggregate([
+    { $group: { _id: null, avgPrice: { $avg: "$price" } } }
+  ]);
+
+  const avgRating = await HotelModel.aggregate([
+    { $group: { _id: null, avgRating: { $avg: "$starRating" } } }
+  ]);
+
+  res.status(200).json({
+    totalHotels,
+    topCities,
+    topCountries,
+    averagePrice: avgPrice[0]?.avgPrice?.toFixed(2) || 0,
+    averageRating: avgRating[0]?.avgRating?.toFixed(2) || 0
+  });
+});
+
 export {
     getAllHotels,
     getHotelById,
@@ -231,6 +263,7 @@ export {
     deleteHotel,
     getHotelsByHost,
     searchHotels,
-    getHotelsByHostById
+    getHotelsByHostById,
+    getHotelStats 
 };
 

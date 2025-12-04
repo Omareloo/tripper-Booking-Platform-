@@ -395,6 +395,40 @@ const getExperiencesByHostById = asyncHandler(async (req, res) => {
   res.status(200).json(experiences);
 });
 
+// Get experience statistics (Admin only)
+const getExperienceStats = asyncHandler(async (req, res) => {
+  const totalExperiences = await ExperienceModel.countDocuments();
+  
+  const topCities = await ExperienceModel.aggregate([
+    { $group: { _id: "$address.city", count: { $sum: 1 } } },
+    { $sort: { count: -1 } },
+    { $limit: 5 }
+  ]);
+
+  const topCountries = await ExperienceModel.aggregate([
+    { $group: { _id: "$address.country", count: { $sum: 1 } } },
+    { $sort: { count: -1 } },
+    { $limit: 5 }
+  ]);
+
+  const avgPrice = await ExperienceModel.aggregate([
+    { $group: { _id: null, avgPrice: { $avg: "$price" } } }
+  ]);
+
+  const avgRating = await ExperienceModel.aggregate([
+    { $group: { _id: null, avgRating: { $avg: "$starRating" } } }
+  ]);
+
+  res.status(200).json({
+    totalExperiences,
+    topCities,
+    topCountries,
+    averagePrice: avgPrice[0]?.avgPrice?.toFixed(2) || 0,
+    averageRating: avgRating[0]?.avgRating?.toFixed(2) || 0
+  });
+});
+
+
 
 export {
     getAllExperiences,
@@ -409,5 +443,6 @@ export {
     addDate,
     removeDate,
     addExperienceImages,
-    getExperiencesByHostById
+    getExperiencesByHostById,
+    getExperienceStats
 };
