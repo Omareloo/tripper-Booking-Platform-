@@ -16,6 +16,12 @@ const hotelSchema = mongoose.Schema({
             amenities: [String],
         }
     ],
+      propertyType: {
+    type: String,
+    enum: ["hotel", "villa", "apartment"],
+    default: "hotel",
+    required: true
+  },
     address: {
         country: {type: String,required: true},
         city: {type:String, required: true},
