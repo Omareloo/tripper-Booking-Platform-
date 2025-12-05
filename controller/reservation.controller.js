@@ -5,7 +5,7 @@ import { asyncHandler } from "../middlewares/errorHandler.js";
 
 
 export const createReservation = asyncHandler(async (req, res) => {
-  const { hotelId, roomId,roomCount, experienceId, checkIn, checkOut, guestsCount, guestData } = req.body;
+  const { hotelId, rooms, experienceId, checkIn, checkOut, guestsCount, guestData } = req.body;
   const guestId = req.user._id;
 
   if (!hotelId && !experienceId) {
@@ -18,6 +18,7 @@ export const createReservation = asyncHandler(async (req, res) => {
   if (experienceId) {
     const experience = await ExperienceModel.findById(experienceId);
     if (!experience) return res.status(404).json({ message: "Experience not found" });
+    
     const reservations = await Reservation.find({
       experienceId,
       guestId,
@@ -27,7 +28,6 @@ export const createReservation = asyncHandler(async (req, res) => {
     if (reservations.length > 0) {
       return res.status(400).json({ message: "You already have a reservation for this experience" });
     }
-    
 
     const totalPrice = guestsCount * experience.price;
 
@@ -37,7 +37,7 @@ export const createReservation = asyncHandler(async (req, res) => {
       totalPrice,
       checkIn,
       checkOut,
-      guestsCount,
+      totalGuests: guestsCount,
     });
 
     const saved = await reservation.save();
@@ -54,73 +54,113 @@ export const createReservation = asyncHandler(async (req, res) => {
   const hotelHasRooms = hotel.rooms && hotel.rooms.length > 0;
 
   // ============================================================
-// CASE 1: Hotel HAS Rooms → room-level booking
-// ============================
-if (hotelHasRooms) {
-  if (!roomId) {
-    return res.status(400).json({ message: "roomId is required for this hotel" });
-  }
-
-  const selectedRoom = hotel.rooms.id(roomId);
-  if (!selectedRoom) {
-    return res.status(404).json({ message: "Room not found in this hotel" });
-  }
-
-  // Count overlapping reservations for this room
-  const overlappingCount = await Reservation.aggregate([
-    {
-      $match: {
-        hotelId: hotel._id,
-        roomId,
-        status: { $ne: "cancelled" },
-        checkIn: { $lt: new Date(checkOut) },
-        checkOut: { $gt: new Date(checkIn) }
-      }
-    },
-    {
-      $group: {
-        _id: null,
-        totalReserved: { $sum: "$roomCount" }
-      }
+  // CASE 1: Hotel HAS Rooms → multi-room booking
+  // ============================================================
+  if (hotelHasRooms) {
+    if (!rooms || rooms.length === 0) {
+      return res.status(400).json({ message: "At least one room is required" });
     }
-  ]);
 
-  const alreadyReserved = overlappingCount.length ? overlappingCount[0].totalReserved : 0;
+    let totalPrice = 0;
+    const nights = (new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24);
+    const validatedRooms = [];
 
-  // Check if enough rooms are available
-  if (alreadyReserved + roomCount > selectedRoom.quantity) {
-    return res.status(400).json({
-      message: `Not enough rooms available. Only ${selectedRoom.quantity - alreadyReserved} left`
+    // Validate each room and check availability
+    for (const roomData of rooms) {
+      const { roomId, roomCount, guestsData } = roomData;
+
+      if (!roomId || !roomCount || roomCount < 1) {
+        return res.status(400).json({ message: "Invalid room data" });
+      }
+
+      // Find room in hotel
+      const selectedRoom = hotel.rooms.id(roomId);
+      if (!selectedRoom) {
+        return res.status(404).json({ message: `Room not found: ${roomId}` });
+      }
+
+      // Validate guests data
+      if (!guestsData || guestsData.length === 0) {
+        return res.status(400).json({ 
+          message: `Guest information is required for ${selectedRoom.name}` 
+        });
+      }
+
+      // Check max guests per room
+      const totalGuestsInRoom = guestsData.length;
+      if (totalGuestsInRoom > selectedRoom.maxGuests * roomCount) {
+        return res.status(400).json({ 
+          message: `Too many guests for ${selectedRoom.name}. Max: ${selectedRoom.maxGuests * roomCount}` 
+        });
+      }
+
+      // Check availability
+      const overlappingCount = await Reservation.aggregate([
+        {
+          $match: {
+            hotelId: hotel._id,
+            "rooms.roomId": selectedRoom._id,
+            status: { $ne: "cancelled" },
+            checkIn: { $lt: new Date(checkOut) },
+            checkOut: { $gt: new Date(checkIn) }
+          }
+        },
+        { $unwind: "$rooms" },
+        {
+          $match: {
+            "rooms.roomId": selectedRoom._id
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalReserved: { $sum: "$rooms.roomCount" }
+          }
+        }
+      ]);
+
+      const alreadyReserved = overlappingCount.length ? overlappingCount[0].totalReserved : 0;
+
+      if (alreadyReserved + roomCount > selectedRoom.quantity) {
+        return res.status(400).json({
+          message: `Not enough ${selectedRoom.name} available. Only ${selectedRoom.quantity - alreadyReserved} left`
+        });
+      }
+
+      // Calculate price for this room type
+      const roomPrice = nights * selectedRoom.price * roomCount;
+      totalPrice += roomPrice;
+
+      validatedRooms.push({
+        roomId: selectedRoom._id,
+        roomCount,
+        guestsData
+      });
+    }
+
+    // Calculate total guests
+    const totalGuests = validatedRooms.reduce((sum, room) => 
+      sum + room.guestsData.length, 0
+    );
+
+    const reservation = new Reservation({
+      guestId,
+      hotelId,
+      rooms: validatedRooms,
+      totalPrice,
+      checkIn,
+      checkOut,
+      totalGuests,
     });
+
+    const saved = await reservation.save();
+    return res.status(201).json(saved);
   }
-
-  const nights =
-    (new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24);
-
-  const totalPrice = nights * selectedRoom.price * roomCount;
-
-  const reservation = new Reservation({
-    guestId,
-    guestData,
-    hotelId,
-    roomId,
-    roomCount,
-    totalPrice,
-    checkIn,
-    checkOut,
-    guestsCount,
-  });
-
-  const saved = await reservation.save();
-  return res.status(201).json(saved);
-}
-
 
   // ============================================================
   // CASE 2: Hotel does NOT have rooms → full-hotel booking
   // ============================================================
 
-  // Check if dates overlap with any ACTIVE reservation
   const conflict = await Reservation.findOne({
     hotelId,
     status: { $ne: "cancelled" },
@@ -134,9 +174,7 @@ if (hotelHasRooms) {
     });
   }
 
-  const nights =
-    (new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24);
-
+  const nights = (new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24);
   const totalPrice = nights * hotel.price;
 
   const reservation = new Reservation({
@@ -146,7 +184,7 @@ if (hotelHasRooms) {
     totalPrice,
     checkIn,
     checkOut,
-    guestsCount,
+    totalGuests: guestsCount,
   });
 
   const saved = await reservation.save();
@@ -175,8 +213,9 @@ export const getAllReservations = asyncHandler(async (req, res) => {
 export const getUserReservations = asyncHandler(async (req, res) => {
   const userId = req.user._id;
   const reservations = await Reservation.find({ guestId: userId })
-    .populate("hotelId", "name price images")
+    .populate("hotelId", "name price images address")
     .populate("experienceId", "name price images");
+  
   res.status(200).json(reservations);
 });
 
