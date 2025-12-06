@@ -11,6 +11,7 @@ const createHotel = asyncHandler(async (req, res) => {
         amenities,
         address,
         rooms,
+        notes,
         propertyType,
         type // يمكن يجي من الـ frontend كـ type
     } = req.body;
@@ -36,6 +37,7 @@ const createHotel = asyncHandler(async (req, res) => {
         amenities: amenities || [],
         address,
         rooms: rooms || [],
+        notes,
         propertyType: finalPropertyType
     });
 
@@ -210,6 +212,8 @@ const updateHotel = asyncHandler(async (req, res) => {
     data: updatedHotel
   });
 });
+
+
 
 const getHotelsByHostById = asyncHandler(async (req, res) => {
     const { hostId } = req.params;

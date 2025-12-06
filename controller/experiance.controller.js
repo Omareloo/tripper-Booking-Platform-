@@ -276,6 +276,7 @@ const getExperiencesByHostById = asyncHandler(async (req, res) => {
     dates,
     activities,
     address,
+    notes
   } = req.body;
 
   // ✅ Enhanced validation
@@ -327,6 +328,7 @@ const getExperiencesByHostById = asyncHandler(async (req, res) => {
     dates: dates.map(d => new Date(d)),
     activities: activities || [],
     address,
+    notes
   });
 
   const savedExperience = await newExperience.save();
@@ -427,6 +429,8 @@ const getExperienceStats = asyncHandler(async (req, res) => {
     averageRating: avgRating[0]?.avgRating?.toFixed(2) || 0
   });
 });
+
+
 
 
 

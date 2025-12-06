@@ -42,6 +42,7 @@ router.get("/:id", getExperienceById);
 router.put("/:id", auth, host, updateExperience);
 router.delete("/:id", auth, host, deleteExperience);
 
+
 // Images
 router.post("/:id/images", auth, host, upload.array("images", 5), addExperienceImages);
 

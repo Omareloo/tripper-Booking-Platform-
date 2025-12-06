@@ -37,6 +37,7 @@ router.post("/", auth, host, upload.array("images", 5), createHotel);
 router.get("/:id", getHotelById);
 router.put("/:id", auth, host, updateHotel);
 router.patch("/:id/images", auth, host, upload.array("images", 5), updateHotelImages);
+
 router.delete("/:id", auth, host, deleteHotel);
 
 export default router;
