@@ -1,3 +1,5 @@
+
+
 import { asyncHandler } from "../middlewares/errorHandler.js";
 import User from "../models/user_model.js";
 import bcrypt from "bcrypt";
@@ -24,17 +26,17 @@ export const signup = asyncHandler(async (req, res) => {
 
   // Generate verification token
   const token = jwt.sign({ email: req.body.email }, "myEmail", {
-    expiresIn: "24h", // ✅ زودت المدة من ساعة لـ 24 ساعة
+    expiresIn: "24h",
   });
 
-  const verificationLink = `${process.env.FRONTEND_URL || 'http://localhost:4000'}/user/verify/${token}`;
+  // ✅ الـ link يروح على الـ Backend endpoint
+  const verificationLink = `${process.env.BACKEND_URL || 'http://localhost:5000'}/user/verify/${token}`;
   const htmlTemplate = template(verificationLink);
 
   try {
     await sendEmail(req.body.email, "Verify Your Email", htmlTemplate);
   } catch (error) {
     console.error("Email sending error:", error);
-    // ✅ Don't fail registration if email fails
   }
 
   res.status(201).json({
@@ -230,7 +232,6 @@ export const verifyIdentity = asyncHandler(async (req, res) => {
   });
 });
 
-
 export const confirmEmail = asyncHandler(async (req, res) => {
   try {
     const { token } = req.params;
@@ -242,13 +243,27 @@ export const confirmEmail = asyncHandler(async (req, res) => {
       { new: true }
     );
 
-    if (!user) return res.status(404).send("User not found");
+    if (!user) {
+      return res.redirect(
+        `${process.env.FRONTEND_URL || 'http://localhost:4000'}/verify-email?status=error&message=${encodeURIComponent('User not found')}`
+      );
+    }
 
-    res.status(200).send("Email confirmed successfully");
-    // res.redirect("http://localhost:4000/signin");
+    // ✅ Success redirect
+    res.redirect(
+      `${process.env.FRONTEND_URL || 'http://localhost:4000'}/verify-email?status=success`
+    );
+    
   } catch (err) {
     console.error("Verify error:", err);
-    // res.redirect("http://localhost:4000/signup");
+    
+    const errorMessage = err.name === 'TokenExpiredError' 
+      ? 'Verification link has expired' 
+      : 'Invalid verification link';
+    
+    res.redirect(
+      `${process.env.FRONTEND_URL || 'http://localhost:4000'}/verify-email?status=error&message=${encodeURIComponent(errorMessage)}`
+    );
   }
 });
 
@@ -382,4 +397,153 @@ export const updateUserProfileImage = asyncHandler(async (req, res) => {
     data: { image: user.image },
     message: "Profile image updated successfully"
   });
+});
+
+export const forgotPassword = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  const user = await User.findOne({ email });
+  if (!user) {
+    return res.status(404).json({ 
+      message: "No account found with this email address" 
+    });
+  }
+
+  // Generate reset token
+  const resetToken = jwt.sign(
+    { userId: user._id, email: user.email },
+    process.env.JWT_SECRET || "secret",
+    { expiresIn: "1h" }
+  );
+
+  // Create reset link
+  const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:4000'}/reset-password?token=${resetToken}`;
+
+  // Email template
+  const emailTemplate = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                    color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .button { display: inline-block; padding: 15px 30px; background: #667eea; 
+                    color: white; text-decoration: none; border-radius: 5px; font-weight: bold; }
+          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🔐 Password Reset Request</h1>
+          </div>
+          <div class="content">
+            <p>Hi ${user.name},</p>
+            <p>We received a request to reset your password for your Tripper account.</p>
+            <p>Click the button below to reset your password:</p>
+            <p style="text-align: center; margin: 30px 0;">
+              <a href="${resetLink}" class="button">Reset Password</a>
+            </p>
+            <p><strong>This link will expire in 1 hour.</strong></p>
+            <p>If you didn't request this, please ignore this email and your password will remain unchanged.</p>
+            <p>For security reasons, never share this link with anyone.</p>
+          </div>
+          <div class="footer">
+            <p>© 2024 Tripper. All rights reserved.</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  try {
+    await sendEmail(email, "Reset Your Password - Tripper", emailTemplate);
+    res.status(200).json({ 
+      message: "Password reset link sent to your email" 
+    });
+  } catch (error) {
+    console.error("Email sending error:", error);
+    res.status(500).json({ 
+      message: "Failed to send reset email. Please try again." 
+    });
+  }
+});
+
+export const resetPassword = asyncHandler(async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  if (!token || !newPassword) {
+    return res.status(400).json({ 
+      message: "Token and new password are required" 
+    });
+  }
+
+  if (newPassword.length < 8) {
+    return res.status(400).json({ 
+      message: "Password must be at least 8 characters" 
+    });
+  }
+
+  try {
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "secret");
+
+    // Find user
+    const user = await User.findById(decoded.userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Hash new password
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    // Send confirmation email
+    const confirmationEmail = `
+      <!DOCTYPE html>
+      <html>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+          <div style="max-width: 600px; margin: 0 auto; background: #f9f9f9; padding: 30px; border-radius: 10px;">
+            <h2 style="color: #4caf50;">✅ Password Changed Successfully</h2>
+            <p>Hi ${user.name},</p>
+            <p>Your password has been successfully reset. You can now log in with your new password.</p>
+            <p>If you didn't make this change, please contact our support team immediately.</p>
+            <p style="margin-top: 30px;">Best regards,<br/>The Tripper Team</p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    try {
+      await sendEmail(user.email, "Password Changed - Tripper", confirmationEmail);
+    } catch (error) {
+      console.error("Confirmation email error:", error);
+    }
+
+    res.status(200).json({ 
+      message: "Password reset successful. You can now log in with your new password." 
+    });
+
+  } catch (err) {
+    console.error("Reset password error:", err);
+    
+    if (err.name === "TokenExpiredError") {
+      return res.status(400).json({ 
+        message: "Reset link has expired. Please request a new one." 
+      });
+    }
+    
+    if (err.name === "JsonWebTokenError") {
+      return res.status(400).json({ 
+        message: "Invalid reset link" 
+      });
+    }
+
+    res.status(500).json({ 
+      message: "Failed to reset password. Please try again." 
+    });
+  }
 });

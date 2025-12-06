@@ -11,35 +11,39 @@ const createHotel = asyncHandler(async (req, res) => {
         amenities,
         address,
         rooms,
-        notes
-
+        notes,
+        propertyType,
+        type // يمكن يجي من الـ frontend كـ type
     } = req.body;
 
     // Validate required fields
     if (!name || !address?.country || !address?.city || !address?.street) {
         return res.status(400).json({
-            message: "Name, price, and complete address (country, city, street) are required"
+            message: "Name and complete address (country, city, street) are required"
         });
     }
+
     const images = req.files.map(file => file.path);
+
+    // استخدام propertyType أو type
+    const finalPropertyType = propertyType || type || "hotel";
 
     const newHotel = new HotelModel({
         hostId: req.user._id,
         name,
         description,
         images: images || [],
-        price,
+        price: price || 0,
         amenities: amenities || [],
         address,
         rooms: rooms || [],
-        notes
+        notes,
+        propertyType: finalPropertyType
     });
 
     const savedHotel = await newHotel.save();
     res.status(201).json(savedHotel);
 });
-
-
 
 const updateHotelImages = asyncHandler(async (req, res) => {
     const { id } = req.params;
@@ -47,10 +51,9 @@ const updateHotelImages = asyncHandler(async (req, res) => {
     const hotel = await HotelModel.findOne({ _id: id, hostId: req.user._id });
     
     if (!hotel) {
-        return res.status(404).json({ message: "Hotel not found" });
+        return res.status(404).json({ message: "Property not found" });
     }
 
-    // ضيف الصور الجديدة بس
     if (req.files && req.files.length > 0) {
         const newImages = req.files.map(file => file.path);
         hotel.images = [...hotel.images, ...newImages];
@@ -60,12 +63,11 @@ const updateHotelImages = asyncHandler(async (req, res) => {
     res.status(200).json(hotel);
 });
 
-// Delete hotel
 const deleteHotel = asyncHandler(async (req, res) => {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-        return res.status(400).json({ message: "Invalid hotel ID" });
+        return res.status(400).json({ message: "Invalid property ID" });
     }
 
     const deletedHotel = await HotelModel.findOneAndDelete({
@@ -74,16 +76,15 @@ const deleteHotel = asyncHandler(async (req, res) => {
     });
 
     if (!deletedHotel) {
-        return res.status(404).json({ message: "Hotel not found" });
+        return res.status(404).json({ message: "Property not found" });
     }
 
     res.status(200).json({
-        message: "Hotel deleted successfully",
+        message: "Property deleted successfully",
         deletedHotel
     });
 });
 
-// Get hotels by host
 const getHotelsByHost = asyncHandler(async (req, res) => {
     const hostId = req.user._id;
 
@@ -95,40 +96,36 @@ const getHotelsByHost = asyncHandler(async (req, res) => {
     res.status(200).json(hotels);
 });
 
-
-// ✅ IMPROVED: Get all hotels with error handling
- const getAllHotels = asyncHandler(async (req, res) => {
+const getAllHotels = asyncHandler(async (req, res) => {
   try {
     const hotels = await HotelModel.find()
       .populate('hostId', 'name email image')
-      .sort({ createdAt: -1 }); // ✅ Sort by newest first
+      .sort({ createdAt: -1 });
 
     res.status(200).json(hotels);
   } catch (error) {
-    console.error("Error fetching hotels:", error);
-    res.status(500).json({ message: "Failed to fetch hotels" });
+    console.error("Error fetching properties:", error);
+    res.status(500).json({ message: "Failed to fetch properties" });
   }
 });
 
-// ✅ IMPROVED: Get hotel by ID with better validation
- const getHotelById = asyncHandler(async (req, res) => {
+const getHotelById = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ message: "Invalid hotel ID format" });
+    return res.status(400).json({ message: "Invalid property ID format" });
   }
 
   const hotel = await HotelModel.findById(id).populate('hostId', 'name email image phone');
 
   if (!hotel) {
-    return res.status(404).json({ message: "Hotel not found" });
+    return res.status(404).json({ message: "Property not found" });
   }
 
   res.status(200).json(hotel);
 });
 
-// ✅ IMPROVED: Search with better filters
- const searchHotels = asyncHandler(async (req, res) => {
+const searchHotels = asyncHandler(async (req, res) => {
   const {
     city,
     country,
@@ -136,15 +133,21 @@ const getHotelsByHost = asyncHandler(async (req, res) => {
     maxPrice,
     minRating,
     amenities,
-    sortBy = 'createdAt', // ✅ Default sort
+    propertyType,
+    sortBy = 'createdAt',
     order = 'desc'
   } = req.query;
 
   let filter = {};
 
-  // Location filters (case-insensitive)
+  // Location filters
   if (city) filter['address.city'] = new RegExp(city, 'i');
   if (country) filter['address.country'] = new RegExp(country, 'i');
+
+  // Property type filter
+  if (propertyType && propertyType !== 'all') {
+    filter.propertyType = propertyType;
+  }
 
   // Price range filter
   if (minPrice || maxPrice) {
@@ -161,10 +164,10 @@ const getHotelsByHost = asyncHandler(async (req, res) => {
   // Amenities filter
   if (amenities) {
     const amenitiesArray = Array.isArray(amenities) ? amenities : [amenities];
-    filter.amenities = { $all: amenitiesArray }; // ✅ Changed from $in to $all
+    filter.amenities = { $all: amenitiesArray };
   }
 
-  // ✅ Sorting
+  // Sorting
   const sortOrder = order === 'asc' ? 1 : -1;
   const sortOptions = {};
   sortOptions[sortBy] = sortOrder;
@@ -176,21 +179,18 @@ const getHotelsByHost = asyncHandler(async (req, res) => {
   res.status(200).json(hotels);
 });
 
-
- const updateHotel = asyncHandler(async (req, res) => {
+const updateHotel = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const updateData = req.body;
 
   if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ message: "Invalid hotel ID format" });
+    return res.status(400).json({ message: "Invalid property ID format" });
   }
 
-  // Prevent updating hostId
   if (updateData.hostId) {
     delete updateData.hostId;
   }
 
-  // ✅ Validate price if provided
   if (updateData.price && updateData.price < 0) {
     return res.status(400).json({ message: "Price cannot be negative" });
   }
@@ -203,12 +203,12 @@ const getHotelsByHost = asyncHandler(async (req, res) => {
 
   if (!updatedHotel) {
     return res.status(404).json({ 
-      message: "Hotel not found or you don't have permission to update it" 
+      message: "Property not found or you don't have permission to update it" 
     });
   }
 
   res.status(200).json({
-    message: "Hotel updated successfully",
+    message: "Property updated successfully",
     data: updatedHotel
   });
 });
@@ -226,6 +226,43 @@ const getHotelsByHostById = asyncHandler(async (req, res) => {
     res.status(200).json(hotels);
 });
 
+const getHotelStats = asyncHandler(async (req, res) => {
+  const totalHotels = await HotelModel.countDocuments();
+  
+  const topCities = await HotelModel.aggregate([
+    { $group: { _id: "$address.city", count: { $sum: 1 } } },
+    { $sort: { count: -1 } },
+    { $limit: 5 }
+  ]);
+
+  const topCountries = await HotelModel.aggregate([
+    { $group: { _id: "$address.country", count: { $sum: 1 } } },
+    { $sort: { count: -1 } },
+    { $limit: 5 }
+  ]);
+
+  const avgPrice = await HotelModel.aggregate([
+    { $group: { _id: null, avgPrice: { $avg: "$price" } } }
+  ]);
+
+  const avgRating = await HotelModel.aggregate([
+    { $group: { _id: null, avgRating: { $avg: "$starRating" } } }
+  ]);
+
+  const propertyTypeStats = await HotelModel.aggregate([
+    { $group: { _id: "$propertyType", count: { $sum: 1 } } }
+  ]);
+
+  res.status(200).json({
+    totalHotels,
+    topCities,
+    topCountries,
+    propertyTypeStats,
+    averagePrice: avgPrice[0]?.avgPrice?.toFixed(2) || 0,
+    averageRating: avgRating[0]?.avgRating?.toFixed(2) || 0
+  });
+});
+
 export {
     getAllHotels,
     getHotelById,
@@ -235,6 +272,6 @@ export {
     deleteHotel,
     getHotelsByHost,
     searchHotels,
-    getHotelsByHostById
+    getHotelsByHostById,
+    getHotelStats 
 };
-
