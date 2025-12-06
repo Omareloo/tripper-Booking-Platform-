@@ -27,6 +27,7 @@ router.get("/:id", getHotelById);
 router.post("/", auth, host, upload.array("images", 5), createHotel);
 router.put("/:id", auth, host, updateHotel);
 router.patch("/:id/images", auth, host, upload.array("images", 5), updateHotelImages);
+
 router.delete("/:id", auth, host, deleteHotel);
 
 router.get("/by-host/:hostId", auth, getHotelsByHostById);

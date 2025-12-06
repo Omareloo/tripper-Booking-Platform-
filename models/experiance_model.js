@@ -7,6 +7,7 @@ const experianceSchema = mongoose.Schema({
     images: [String],
     price: {type: Number,required: true},
     dates: [Date],
+    notes:{ type: String , default: ''},
     activities:[
         {
             title: String,

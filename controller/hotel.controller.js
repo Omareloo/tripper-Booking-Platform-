@@ -10,7 +10,8 @@ const createHotel = asyncHandler(async (req, res) => {
         price,
         amenities,
         address,
-        rooms
+        rooms,
+        notes
 
     } = req.body;
 
@@ -30,7 +31,8 @@ const createHotel = asyncHandler(async (req, res) => {
         price,
         amenities: amenities || [],
         address,
-        rooms: rooms || []
+        rooms: rooms || [],
+        notes
     });
 
     const savedHotel = await newHotel.save();
@@ -210,6 +212,8 @@ const getHotelsByHost = asyncHandler(async (req, res) => {
     data: updatedHotel
   });
 });
+
+
 
 const getHotelsByHostById = asyncHandler(async (req, res) => {
     const { hostId } = req.params;

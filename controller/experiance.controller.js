@@ -276,6 +276,7 @@ const getExperiencesByHostById = asyncHandler(async (req, res) => {
     dates,
     activities,
     address,
+    notes
   } = req.body;
 
   // ✅ Enhanced validation
@@ -327,6 +328,7 @@ const getExperiencesByHostById = asyncHandler(async (req, res) => {
     dates: dates.map(d => new Date(d)),
     activities: activities || [],
     address,
+    notes
   });
 
   const savedExperience = await newExperience.save();
@@ -396,6 +398,8 @@ const getExperiencesByHostById = asyncHandler(async (req, res) => {
 });
 
 
+
+
 export {
     getAllExperiences,
     getExperienceById,
@@ -409,5 +413,6 @@ export {
     addDate,
     removeDate,
     addExperienceImages,
-    getExperiencesByHostById
+    getExperiencesByHostById,
+    
 };
